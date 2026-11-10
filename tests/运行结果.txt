@@ -1,0 +1,22 @@
+PASS Lobby readiness host authority and membership changes
+PASS Four shared recipes and four initial orders
+PASS Server rejects distant inactive unknown and stale requests
+PASS Only one player can pick up a contested item
+PASS Duplicate results replay and changed payload is rejected
+PASS Evicted sequence numbers cannot execute again
+PASS Cutting cooldown and item progress
+PASS Cooking and burning are driven by server time
+PASS Plate accepts repeated ingredients in exact quantities
+PASS Complete take cut cook plate deliver loop
+PASS Wrong assembly order fails and plate is consumed once
+PASS Raw and burned food cannot be plated
+PASS Occupied hands stations and plate stock remain valid
+PASS Disconnect moves held item to a free worktop
+PASS Disconnect clears held item when every safe top is full
+PASS Global end produces frozen shared score and summary
+PASS Rematch increments epoch and rejects delayed old commands
+PASS Movement normalizes input expires and rejects nonfinite values
+PASS Five thousand adversarial actions preserve ownership
+PASS TCP supports two clients and fragmented UTF8 frames
+PASS TCP rejects oversized frames and observes host shutdown
+TOTAL 21 scenarios passed

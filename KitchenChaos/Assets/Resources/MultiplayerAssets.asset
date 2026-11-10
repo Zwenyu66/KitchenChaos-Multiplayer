@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b07e6ca40c94e8aaf72528d3f960456d, type: 3}
+  m_Name: MultiplayerAssets
+  m_EditorClassIdentifier: 
+  items:
+  - {fileID: 11400000, guid: a969dff9e455089429d0da7458206aac, type: 2}
+  - {fileID: 11400000, guid: b583fe535cb128043a7dfa813633b1ad, type: 2}
+  - {fileID: 11400000, guid: 523e221d55305e640b5b73a1a30551e6, type: 2}
+  - {fileID: 11400000, guid: bb6195cd55d0815479b8436311eb4dad, type: 2}
+  - {fileID: 11400000, guid: 7bd18cbcd8a7cb74da9dbe2a79b3209f, type: 2}
+  - {fileID: 11400000, guid: 11d3876ccf2b61c4b898f9a3086efb1d, type: 2}
+  - {fileID: 11400000, guid: af07cc8fd11304049ba2ecdbbc85f479, type: 2}
+  - {fileID: 11400000, guid: 28f9a5eb606e6af48b72c8d49af2abec, type: 2}
+  - {fileID: 11400000, guid: c4b85dd319570fb469fadff993a23950, type: 2}
+  - {fileID: 11400000, guid: 62230c93864f56841aca281e841b5e0c, type: 2}
+  - {fileID: 11400000, guid: 22ac905f0966982458f5583d5ea7c860, type: 2}
+  sounds: {fileID: 11400000, guid: 817f22adab4100248a5efbe49b85f80f, type: 2}
+  playerRingMaterial: {fileID: 2100000, guid: dba792b574c201a4eabfe983aa82805a, type: 2}

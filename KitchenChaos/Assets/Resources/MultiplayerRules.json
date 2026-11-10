@@ -1,0 +1,110 @@
+{
+  "roundSeconds": 300,
+  "orderInterval": 4,
+  "countdownSeconds": 3,
+  "maxOrders": 4,
+  "maxPlayers": 4,
+  "minPlayers": 2,
+  "walkSpeed": 7,
+  "runSpeed": 10.5,
+  "interactDistance": 2.5,
+  "cutInterval": 1,
+  "cutCount": 4,
+  "frySeconds": 8,
+  "burnSeconds": 8,
+  "plateInterval": 4,
+  "successPoints": 100,
+  "wrongPenalty": 10,
+  "timeoutPenalty": 10,
+  "starThresholds": [
+    100,
+    300,
+    600,
+    1000
+  ],
+  "recipes": [
+    {
+      "name": "经典牛肉堡",
+      "ingredients": [
+        "Bread",
+        "MeatPattyCooked"
+      ]
+    },
+    {
+      "name": "芝士牛肉堡",
+      "ingredients": [
+        "Bread",
+        "MeatPattyCooked",
+        "CheeseSlices"
+      ]
+    },
+    {
+      "name": "清爽沙拉",
+      "ingredients": [
+        "CabbageSlices",
+        "TomatoSlices"
+      ]
+    },
+    {
+      "name": "田园芝士沙拉",
+      "ingredients": [
+        "CabbageSlices",
+        "TomatoSlices",
+        "CheeseSlices"
+      ]
+    },
+    {
+      "name": "番茄牛肉堡",
+      "ingredients": [
+        "Bread",
+        "MeatPattyCooked",
+        "TomatoSlices"
+      ]
+    },
+    {
+      "name": "全料至尊堡",
+      "ingredients": [
+        "Bread",
+        "MeatPattyCooked",
+        "CheeseSlices",
+        "CabbageSlices",
+        "TomatoSlices"
+      ]
+    },
+    {
+      "name": "双番茄沙拉",
+      "ingredients": [
+        "CabbageSlices",
+        "TomatoSlices",
+        "TomatoSlices"
+      ]
+    },
+    {
+      "name": "双芝士牛肉堡",
+      "ingredients": [
+        "Bread",
+        "MeatPattyCooked",
+        "CheeseSlices",
+        "CheeseSlices"
+      ]
+    },
+    {
+      "name": "田园三明治",
+      "ingredients": [
+        "Bread",
+        "CabbageSlices",
+        "TomatoSlices",
+        "Bread"
+      ]
+    },
+    {
+      "name": "双肉饼汉堡",
+      "ingredients": [
+        "Bread",
+        "MeatPattyCooked",
+        "MeatPattyCooked",
+        "CheeseSlices"
+      ]
+    }
+  ]
+}
