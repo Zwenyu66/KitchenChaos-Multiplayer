@@ -28,7 +28,7 @@ namespace KitchenChaos.Multiplayer {
         private float orderTimer;
         private long revision, eventId;
         private string lastEvent;
-        private int lastActor, lastStation;
+        private int lastActor, lastStation, lastReward;
         private sealed class Entry { public string fingerprint; public Packet result; }
         private sealed class Ledger {
             public long highest;
@@ -123,7 +123,7 @@ namespace KitchenChaos.Multiplayer {
         private static bool Reject(out string reason, string text) { reason = text; return false; }
         private void ClearWorld() {
             Items.Clear(); Orders.Clear(); Menu = new Recipe[0];
-            foreach (var p in Players) { p.hand = 0; p.inputX = p.inputZ = 0; p.walking = p.running = false; p.cutCooldown = 0; }
+            foreach (var p in Players) { p.hand = 0; p.inputX = p.inputZ = 0; p.walking = p.running = false; }
             foreach (var s in Stations) { s.item = s.cuts = 0; s.elapsed = s.progress = s.plateTimer = 0; s.plateStock = 4; s.version++; }
         }
         private void Begin() {
@@ -149,7 +149,7 @@ namespace KitchenChaos.Multiplayer {
             if (Phase != Phase.Playing) return;
             float active = Math.Min(dt, Remaining);
             foreach (var p in Players) {
-                p.inputAge += dt; p.cutCooldown = Math.Max(0,p.cutCooldown-active);
+                p.inputAge += dt;
                 float x = p.inputAge > .3f ? 0 : p.inputX, z = p.inputAge > .3f ? 0 : p.inputZ;
                 p.walking = x*x+z*z > .001f; p.running = p.walking && p.inputRun;
                 if (p.walking) {
@@ -183,12 +183,15 @@ namespace KitchenChaos.Multiplayer {
         private void SpawnOrder(int recipe=-1) { Orders.Add(new Order { id = nextOrder++, recipe = recipe<0?rng.Next(Menu.Length):recipe, createdAt = Rules.roundSeconds-Remaining }); }
         private void Finish() {
             Phase = Phase.Results; Remaining = 0; Result.expired = Orders.Count;
-            Result.score = Math.Max(0,Result.completed*Rules.successPoints-Result.wrong*Rules.wrongPenalty-Result.expired*Rules.timeoutPenalty);
+            UpdateIncome();
             Result.stars = 1; foreach (var t in Rules.starThresholds) if (Result.score >= t) Result.stars++;
             Result.participants = participants.Count;
             Result.accuracy = Result.completed+Result.wrong == 0 ? 0 : (float)Result.completed/(Result.completed+Result.wrong);
             foreach (var p in Players) p.walking = p.running = false;
             Emit("finish",0,0);
+        }
+        private void UpdateIncome() {
+            Result.score = Math.Max(0,Result.earned-Result.wrong*Rules.wrongPenalty-Result.expired*Rules.timeoutPenalty);
         }
         public ItemState FindItem(int id) { return id == 0 ? null : Items.Find(i => i.id == id); }
         private void Give(PlayerState p, string kind) {
@@ -211,14 +214,15 @@ namespace KitchenChaos.Multiplayer {
             if (s.kind == StationKind.Delivery) {
                 if (hand == null || hand.kind != "Plate") return Reject(out reason,"请端着餐盘出餐");
                 var order = Orders.Find(o => Menu[o.recipe].ingredients.SequenceEqual(hand.ingredients));
-                if (order == null) { Result.wrong++; Emit("wrong",p.id,s.id); reason="菜品与订单不符，扣分并回收餐盘"; }
+                if (order == null) { Result.wrong++; Emit("wrong",p.id,s.id); reason="菜品与订单不符，扣款并回收餐盘"; }
                 else {
                     Orders.Remove(order); Result.completed++;
+                    int reward=Menu[order.recipe].reward; Result.earned+=reward;
                     float seconds = Rules.roundSeconds-Remaining-order.createdAt;
                     if (Result.completed == 1 || seconds < Result.bestSeconds) Result.bestSeconds = seconds;
-                    Emit("delivery",p.id,s.id);
+                    Emit("delivery",p.id,s.id,reward);
                 }
-                Result.score = Math.Max(0,Result.completed*Rules.successPoints-Result.wrong*Rules.wrongPenalty);
+                UpdateIncome();
                 Items.Remove(hand); p.hand=0; s.version++; return true;
             }
             if (hand != null && top != null) {
@@ -246,10 +250,11 @@ namespace KitchenChaos.Multiplayer {
             var top=FindItem(s.item);
             if (s.kind != StationKind.Cutting || top == null || CutOutput(top.kind) == null || p.hand != 0)
                 return Reject(out reason,"请空手在有待切食材的砧板前操作");
-            if (p.cutCooldown > .001f) return Reject(out reason,"请稍等下一刀");
-            p.cutCooldown=Rules.cutInterval; s.cuts++; s.progress=(float)s.cuts/Rules.cutCount;
-            if (s.cuts >= Rules.cutCount) { top.kind=CutOutput(top.kind); s.progress=1; }
-            s.version++; Emit("cut",p.id,s.id); reason="切配成功"; return true;
+            // Intermediate cuts update the snapshot, but do not replace the ingredient or its station revision.
+            // Multiple key presses can therefore target the same ingredient before a new snapshot arrives.
+            s.cuts++; s.progress=(float)s.cuts/Rules.cutCount;
+            if (s.cuts >= Rules.cutCount) { top.kind=CutOutput(top.kind); s.progress=1; s.version++; }
+            Emit("cut",p.id,s.id); reason="切配成功"; return true;
         }
         public static string CutOutput(string kind) {
             if (kind == "Tomato") return "TomatoSlices";
@@ -261,12 +266,12 @@ namespace KitchenChaos.Multiplayer {
             return kind == "Bread" || kind == "TomatoSlices" || kind == "CabbageSlices" || kind == "CheeseSlices" || kind == "MeatPattyCooked";
         }
         private static float Dist2(float x,float z,float a,float b) { return (x-a)*(x-a)+(z-b)*(z-b); }
-        private void Emit(string type,int actor,int station) { eventId++; lastEvent=type; lastActor=actor; lastStation=station; }
+        private void Emit(string type,int actor,int station,int reward=0) { eventId++; lastEvent=type; lastActor=actor; lastStation=station; lastReward=reward; }
         // Caller serializes immediately on the same thread; clients only ever receive detached JSON snapshots.
         public Snapshot GetSnapshot() {
             return new Snapshot { revision=++revision, epoch=Epoch, host=Host, code=Code, phase=Phase,
                 remaining=Remaining,countdown=Countdown,players=Players.ToArray(),stations=Stations.ToArray(),items=Items.ToArray(),
-                menu=Menu,orders=Orders.ToArray(),summary=Result,eventId=eventId,lastEvent=lastEvent,lastActor=lastActor,lastStation=lastStation };
+                menu=Menu,orders=Orders.ToArray(),summary=Result,eventId=eventId,lastEvent=lastEvent,lastActor=lastActor,lastStation=lastStation,lastReward=lastReward };
         }
         public void CheckInvariants() {
             var references = Players.Where(p=>p.hand!=0).Select(p=>p.hand).Concat(Stations.Where(s=>s.item!=0).Select(s=>s.item)).ToArray();

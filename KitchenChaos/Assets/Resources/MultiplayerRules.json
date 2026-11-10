@@ -8,12 +8,10 @@
   "walkSpeed": 7,
   "runSpeed": 10.5,
   "interactDistance": 2.5,
-  "cutInterval": 1,
   "cutCount": 4,
   "frySeconds": 8,
   "burnSeconds": 8,
   "plateInterval": 4,
-  "successPoints": 100,
   "wrongPenalty": 10,
   "timeoutPenalty": 10,
   "starThresholds": [
@@ -28,7 +26,8 @@
       "ingredients": [
         "Bread",
         "MeatPattyCooked"
-      ]
+      ],
+      "reward": 100
     },
     {
       "name": "芝士牛肉堡",
@@ -36,14 +35,16 @@
         "Bread",
         "MeatPattyCooked",
         "CheeseSlices"
-      ]
+      ],
+      "reward": 130
     },
     {
       "name": "清爽沙拉",
       "ingredients": [
         "CabbageSlices",
         "TomatoSlices"
-      ]
+      ],
+      "reward": 80
     },
     {
       "name": "田园芝士沙拉",
@@ -51,7 +52,8 @@
         "CabbageSlices",
         "TomatoSlices",
         "CheeseSlices"
-      ]
+      ],
+      "reward": 110
     },
     {
       "name": "番茄牛肉堡",
@@ -59,7 +61,8 @@
         "Bread",
         "MeatPattyCooked",
         "TomatoSlices"
-      ]
+      ],
+      "reward": 130
     },
     {
       "name": "全料至尊堡",
@@ -69,7 +72,8 @@
         "CheeseSlices",
         "CabbageSlices",
         "TomatoSlices"
-      ]
+      ],
+      "reward": 190
     },
     {
       "name": "双番茄沙拉",
@@ -77,7 +81,8 @@
         "CabbageSlices",
         "TomatoSlices",
         "TomatoSlices"
-      ]
+      ],
+      "reward": 110
     },
     {
       "name": "双芝士牛肉堡",
@@ -86,7 +91,8 @@
         "MeatPattyCooked",
         "CheeseSlices",
         "CheeseSlices"
-      ]
+      ],
+      "reward": 160
     },
     {
       "name": "田园三明治",
@@ -95,7 +101,8 @@
         "CabbageSlices",
         "TomatoSlices",
         "Bread"
-      ]
+      ],
+      "reward": 110
     },
     {
       "name": "双肉饼汉堡",
@@ -104,7 +111,8 @@
         "MeatPattyCooked",
         "MeatPattyCooked",
         "CheeseSlices"
-      ]
+      ],
+      "reward": 195
     }
   ]
 }

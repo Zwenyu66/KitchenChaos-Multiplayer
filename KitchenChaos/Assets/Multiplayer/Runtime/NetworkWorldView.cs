@@ -69,6 +69,7 @@ namespace KitchenChaos.Multiplayer {
                 string supply=kind==StationKind.Supply ? ((ContainerCounter)counter).MultiplayerSupply.name : "";
                 var s=new StationState{id=index,kind=kind,key=PathOf(counter.transform),x=counter.transform.position.x,z=counter.transform.position.z,supply=supply};
                 layout.Add(s); Counters.Add(index,counter);
+                if(supply=="MeatPattyUncooked") AddBeefDisplay(counter);
                 if(kind==StationKind.Stove) {
                     var audio=counter.gameObject.AddComponent<AudioSource>();audio.playOnAwake=false;audio.loop=true;audio.spatialBlend=.3f;audio.volume=.2f;
                     if(sounds!=null) audio.clip=sounds.stoveSizzle;stoves.Add(index,audio);
@@ -77,6 +78,15 @@ namespace KitchenChaos.Multiplayer {
             }
             LayoutSignature=string.Join("\n",layout.Select(s=>s.key+"|"+s.kind+"|"+s.supply+"|"+s.x.ToString("F3",CultureInfo.InvariantCulture)+","+s.z.ToString("F3",CultureInfo.InvariantCulture)));
             Clear();
+        }
+        private void AddBeefDisplay(BaseCounter counter) {
+            var display=Instantiate(Assets["MeatPattyUncooked"].prefab,counter.GetKitchenObjectFollowTransform(),false);
+            display.name="BeefSupplyDisplay";
+            display.localPosition=Vector3.zero;
+            display.localRotation=Quaternion.identity;
+            foreach(var behavior in display.GetComponentsInChildren<MonoBehaviour>(true)) behavior.enabled=false;
+            foreach(var collider in display.GetComponentsInChildren<Collider>(true)) collider.enabled=false;
+            foreach(var canvas in display.GetComponentsInChildren<Canvas>(true)) canvas.enabled=false;
         }
         private static string PathOf(Transform t) {
             string path="";
@@ -201,7 +211,7 @@ namespace KitchenChaos.Multiplayer {
         }
         private void PlayEvent(Snapshot s) {
             if(s.lastEvent=="delivery"||s.lastEvent=="wrong") {
-                Feedback=s.lastEvent=="delivery"?"✓ 出餐成功  +"+session.Config.successPoints:"出餐不符  -"+session.Config.wrongPenalty;
+                Feedback=s.lastEvent=="delivery"?"出餐成功  +"+s.lastReward+" 元":"出餐不符  -"+session.Config.wrongPenalty+" 元";
                 FeedbackUntil=Time.unscaledTime+1.8f;
             }
             Vector3 position=s.lastStation!=0&&Counters.ContainsKey(s.lastStation)?Counters[s.lastStation].transform.position:Vector3.zero;

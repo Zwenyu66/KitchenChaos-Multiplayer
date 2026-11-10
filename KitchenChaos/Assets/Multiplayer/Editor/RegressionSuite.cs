@@ -16,10 +16,10 @@ namespace KitchenChaos.Multiplayer {
             private readonly Dictionary<int,long> sequence=new Dictionary<int,long>{{1,0},{2,0},{3,0},{4,0}};
             public Fixture(bool begin=true) {
                 var rules=new Rules{recipes=new[]{
-                    new Recipe{name="汉堡",ingredients=new[]{"Bread","MeatPattyCooked"}},
-                    new Recipe{name="沙拉",ingredients=new[]{"CabbageSlices","TomatoSlices"}},
-                    new Recipe{name="双番茄",ingredients=new[]{"TomatoSlices","TomatoSlices"}},
-                    new Recipe{name="双奶酪",ingredients=new[]{"Bread","CheeseSlices","CheeseSlices"}}
+                    new Recipe{name="汉堡",reward=100,ingredients=new[]{"Bread","MeatPattyCooked"}},
+                    new Recipe{name="沙拉",reward=80,ingredients=new[]{"CabbageSlices","TomatoSlices"}},
+                    new Recipe{name="双番茄",reward=80,ingredients=new[]{"TomatoSlices","TomatoSlices"}},
+                    new Recipe{name="双奶酪",reward=95,ingredients=new[]{"Bread","CheeseSlices","CheeseSlices"}}
                 }};
                 var stations=new List<StationState>();int i=0;
                 foreach(var ingredient in new[]{"Bread","Tomato","Cabbage","CheeseBlock","MeatPattyUncooked"})
@@ -50,7 +50,7 @@ namespace KitchenChaos.Multiplayer {
                 Interact(player,basket);
                 if(KitchenServer.CutOutput(raw)!=null) {
                     Interact(player,11);
-                    for(int i=0;i<game.Rules.cutCount;i++) { game.Step(game.Rules.cutInterval);Check(Do(player,"cut",11).ok,"cut"); }
+                    for(int i=0;i<game.Rules.cutCount;i++) Check(Do(player,"cut",11).ok,"cut");
                     Interact(player,11);
                 } else if(raw=="MeatPattyUncooked") { Interact(player,12);game.Step(game.Rules.frySeconds);Interact(player,12); }
                 Check(game.FindItem(Player(player).hand).kind==ingredient,"processed ingredient");
@@ -99,11 +99,25 @@ namespace KitchenChaos.Multiplayer {
                 for(int i=0;i<300;i++) f.Do(1,"unknown");
                 Check(!f.game.Command(1,request).ok,"ancient replay");f.game.CheckInvariants();
             });
-            Test("Cutting cooldown and item progress",()=>{
+            Test("Rapid cuts need no wait or newer snapshot and duplicate packets count once",()=>{
                 var f=new Fixture();f.Interact(1,2);f.Interact(1,11);
-                Check(f.Do(1,"cut",11).ok,"first cut");Check(!f.Do(1,"cut",11).ok,"spam cut");
-                for(int i=1;i<4;i++) { f.game.Step(f.game.Rules.cutInterval);Check(f.Do(1,"cut",11).ok,"subsequent cut"); }
-                Check(f.game.FindItem(f.game.Stations.Find(s=>s.id==11).item).kind=="TomatoSlices","slices");
+                var board=f.game.Stations.Find(s=>s.id==11);
+                var commands=Enumerable.Range(0,f.game.Rules.cutCount).Select(i=>f.Cmd(1,"cut",11)).ToArray();
+                float remaining=f.game.Remaining;
+                Check(f.game.Command(1,commands[0]).ok,"first cut");
+                Check(f.game.Command(1,commands[0]).ok&&board.cuts==1,"replayed cut counts once");
+                for(int i=1;i<commands.Length;i++) Check(f.game.Command(1,commands[i]).ok,"queued rapid cut");
+                Check(f.game.Remaining==remaining,"no elapsed time needed");
+                Check(f.game.FindItem(board.item).kind=="TomatoSlices"&&board.progress==1,"slices");
+                Check(!f.Do(1,"cut",11).ok,"finished ingredient cannot be cut again");
+            });
+            Test("A delayed cut cannot affect a replacement ingredient",()=>{
+                var f=new Fixture();f.Interact(1,2);f.Interact(1,11);f.At(2,11);
+                var delayed=f.Cmd(2,"cut",11);
+                f.Interact(1,11);f.Interact(1,15);f.Interact(1,3);f.Interact(1,11);
+                Check(!f.game.Command(2,delayed).ok,"stale cut rejected");
+                var board=f.game.Stations.Find(s=>s.id==11);
+                Check(board.cuts==0&&f.game.FindItem(board.item).kind=="Cabbage","replacement stays intact");
             });
             Test("Cooking and burning are driven by server time",()=>{
                 var f=new Fixture();f.Interact(1,5);f.Interact(1,12);f.game.Step(8);
@@ -126,6 +140,22 @@ namespace KitchenChaos.Multiplayer {
                 var f=new Fixture();f.Plate(1,new[]{"MeatPattyCooked","Bread"});f.At(1,14);
                 var r=f.Cmd(1,"interact",14);Check(f.game.Command(1,r).ok,"wrong delivery is processed");
                 f.game.Command(1,r);Check(f.game.Result.wrong==1&&f.Player(1).hand==0,"idempotent wrong delivery");
+            });
+            Test("Recipe-specific payments persist through deductions and final settlement",()=>{
+                var f=new Fixture();
+                f.Plate(1,new[]{"CabbageSlices","TomatoSlices"});f.Interact(1,14);
+                Check(f.game.GetSnapshot().lastReward==80&&f.game.Result.score==80,"salad pays 80");
+                f.Plate(1,new[]{"Bread","MeatPattyCooked"});f.At(1,14);
+                var delivery=f.Cmd(1,"interact",14);
+                Check(f.game.Command(1,delivery).ok&&f.game.Command(1,delivery).ok,"delivery and replay");
+                Check(f.game.GetSnapshot().lastReward==100&&f.game.Result.earned==180&&f.game.Result.score==180,"burger pays 100 once");
+                f.Interact(1,13);f.Interact(1,14);
+                Check(f.game.Result.score==170,"wrong delivery deducts 10");
+                f.game.Step(8); // The two successful deliveries free two order slots; both refill before closing.
+                Check(f.game.Orders.Count==4,"outstanding orders refilled");
+                f.game.Step(301);
+                Check(f.game.Phase==Phase.Results&&f.game.Result.expired==4&&f.game.Result.earned==180&&f.game.Result.score==130,
+                    "settlement keeps individual rewards and deducts the four orders remaining at closing");
             });
             Test("Raw and burned food cannot be plated",()=>{
                 var f=new Fixture();f.Interact(1,13);f.Interact(1,10);f.Interact(1,2);f.At(1,10);
