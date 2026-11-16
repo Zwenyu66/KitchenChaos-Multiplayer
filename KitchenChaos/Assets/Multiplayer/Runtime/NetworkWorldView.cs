@@ -31,6 +31,8 @@ namespace KitchenChaos.Multiplayer {
         private Vector3 holdPosition;
         private AudioClipRefsSO sounds;
         private Material ringTemplate;
+        private Material[] chefMaterials;
+        private readonly PlayerState renderLocal=new PlayerState();
         private readonly List<Material> ringMaterials=new List<Material>();
         private Snapshot state;
         private long lastEvent;
@@ -43,6 +45,9 @@ namespace KitchenChaos.Multiplayer {
             foreach(var item in catalog.items) Assets.Add(item.name,item);
             sounds=catalog.sounds;
             ringTemplate=catalog.playerRingMaterial;
+            chefMaterials=catalog.chefBodyMaterials;
+            if(chefMaterials==null||chefMaterials.Length!=4||chefMaterials.Any(m=>m==null))throw new InvalidOperationException("缺少四种原有厨师材质，请使用完整新版工程");
+            for(int i=0;i<4;i++)ChefColors[i]=chefMaterials[i].color;
             foreach(string id in new[]{"Bread","Tomato","TomatoSlices","Cabbage","CabbageSlices","CheeseBlock","CheeseSlices","MeatPattyUncooked","MeatPattyCooked","MeatPattyBurned","Plate"})
                 if(!Assets.ContainsKey(id)) throw new InvalidOperationException("缺少食材资源: "+id);
             template=FindObjectOfType<Player>(true);
@@ -154,6 +159,10 @@ namespace KitchenChaos.Multiplayer {
                 var stove=Counters[pair.Key].GetComponentInChildren<StoveCounterVisual>(true);
                 if(stove!=null) stove.ApplyMultiplayerState(active);
             }
+            foreach(var station in state.stations.Where(v=>v.kind==StationKind.Plates)) {
+                var stack=Counters[station.id].GetComponentInChildren<PlatesCounterVisual>(true);
+                if(stack!=null)stack.ApplyMultiplayerStock(station.plateStock);
+            }
             if(snapshot.eventId>lastEvent) { lastEvent=snapshot.eventId;PlayEvent(snapshot); }
         }
         private void CreateChef(PlayerState player) {
@@ -166,6 +175,13 @@ namespace KitchenChaos.Multiplayer {
                 foreach(var collider in visual.GetComponentsInChildren<Collider>(true)) collider.enabled=false;
             }
             var hold=new GameObject("Hand").transform;hold.SetParent(root,false);hold.localPosition=holdPosition;
+            // Use the project's actual yellow/red/green/blue body materials; keep eye materials unchanged.
+            foreach(var renderer in root.GetComponentsInChildren<Renderer>(true)) {
+                var materials=renderer.sharedMaterials;
+                for(int i=0;i<materials.Length;i++)
+                    if(materials[i]!=null&&materials[i].name.StartsWith("PlayerBody",StringComparison.Ordinal))materials[i]=chefMaterials[player.slot%4];
+                renderer.sharedMaterials=materials;
+            }
             var ring=GameObject.CreatePrimitive(PrimitiveType.Cylinder);ring.name="PlayerColour";ring.transform.SetParent(root,false);
             ring.transform.localPosition=new Vector3(0,.025f,0);ring.transform.localScale=new Vector3(1.05f,.018f,1.05f);
             ring.GetComponent<Collider>().enabled=false;
@@ -180,16 +196,25 @@ namespace KitchenChaos.Multiplayer {
             if(state==null) return;
             foreach(var p in state.players) {
                 Chef chef;if(!chefs.TryGetValue(p.id,out chef)) continue;
-                var goal=new Vector3(p.x,0,p.z);
-                chef.root.position=Vector3.Distance(chef.root.position,goal)>3 ? goal : Vector3.Lerp(chef.root.position,goal,1-Mathf.Exp(-20*Time.unscaledDeltaTime));
-                var facing=new Vector3(-p.facingX,0,-p.facingZ);
+                var shown=p;
+                if(p.id==session.LocalPlayer&&state.phase==Phase.Playing&&session.Prediction.Position!=null) {
+                    MotionState.From(session.Prediction.Position).Apply(renderLocal);renderLocal.id=p.id;
+                    var axis=ReadInput();
+                    Movement.Advance(renderLocal,axis.x,axis.y,RunPressed,session.TickRemainder,session.Config,ResolveMove,state.players);
+                    shown=renderLocal;
+                }
+                var goal=new Vector3(shown.x,0,shown.z);
+                bool isLocal=p.id==session.LocalPlayer;
+                chef.root.position=isLocal||Vector3.Distance(chef.root.position,goal)>3 ? goal : Vector3.Lerp(chef.root.position,goal,1-Mathf.Exp(-25*Time.unscaledDeltaTime));
+                var facing=new Vector3(-shown.facingX,0,-shown.facingZ);
                 if(facing.sqrMagnitude>.01f) chef.root.rotation=Quaternion.Slerp(chef.root.rotation,Quaternion.LookRotation(facing),Time.unscaledDeltaTime*20);
-                if(chef.animator!=null) { chef.animator.SetBool("IsWalking",p.walking);chef.animator.SetBool("IsRunning",p.running); }
+                if(chef.animator!=null) { chef.animator.SetBool("IsWalking",shown.walking);chef.animator.SetBool("IsRunning",shown.running); }
                 chef.steps-=Time.unscaledDeltaTime;
                 if(p.walking && chef.steps<=0) { chef.steps=p.running?.25f:.5f;Play(sounds==null?null:sounds.footstep,chef.root.position,.3f); }
             }
             SelectedStation=0;
             var local=state.players.FirstOrDefault(p=>p.id==session.LocalPlayer);
+            if(local!=null&&session.Prediction.Position!=null&&state.phase==Phase.Playing)local=renderLocal;
             if(local!=null && state.phase==Phase.Playing) {
                 var forward=new Vector2(local.facingX,local.facingZ).normalized;
                 float best=float.MaxValue;
@@ -239,6 +264,7 @@ namespace KitchenChaos.Multiplayer {
             foreach(var item in visuals.Values) if(item.root!=null) Destroy(item.root.gameObject);visuals.Clear();
             foreach(var source in stoves.Values) source.Stop();
             foreach(var counter in Counters.Values) { var stove=counter.GetComponentInChildren<StoveCounterVisual>(true);if(stove!=null) stove.ApplyMultiplayerState(false); }
+            foreach(var counter in Counters.Values) {var stack=counter.GetComponentInChildren<PlatesCounterVisual>(true);if(stack!=null)stack.ApplyMultiplayerStock(0);}
             state=null;lastEvent=0;lastSecond=-1;PauseOverlay=false;
             Feedback=null;FeedbackUntil=0;
             foreach(var material in ringMaterials) Destroy(material);ringMaterials.Clear();

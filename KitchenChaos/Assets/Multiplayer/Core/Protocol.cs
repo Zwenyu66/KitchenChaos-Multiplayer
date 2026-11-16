@@ -7,19 +7,23 @@ namespace KitchenChaos.Multiplayer {
     // Fields (rather than properties) keep these DTOs compatible with Unity JsonUtility.
     [Serializable] public class Packet {
         public string type;
-        public int protocol = 1;
+        public int protocol = 2;
         public string contentHash, name, code, action, reason;
         public long seq;
+        public long inputSequence;
+        public double sentAt;
         public int epoch, target, expectedVersion, player;
         public float x, z;
         public bool run, ready, ok;
         public Snapshot snapshot;
+        public WorldDelta delta;
     }
     [Serializable] public class PlayerState {
         public int id, hand, slot;
         public string name;
         public bool ready, walking, running;
         public float x, z, facingX, facingZ = 1;
+        public long lastInput;
         [NonSerialized] public float inputX, inputZ, inputAge;
         [NonSerialized] public float spawnX, spawnZ;
         [NonSerialized] public bool inputRun;
@@ -50,6 +54,7 @@ namespace KitchenChaos.Multiplayer {
     }
     [Serializable] public class Snapshot {
         public long revision;
+        public long tick;
         public int epoch, host, lastActor, lastStation, lastReward;
         public string code, lastEvent;
         public long eventId;
@@ -64,7 +69,7 @@ namespace KitchenChaos.Multiplayer {
     }
     [Serializable] public class Rules {
         public float roundSeconds = 300, orderInterval = 4, countdownSeconds = 3;
-        public int maxOrders = 4, maxPlayers = 4, minPlayers = 2;
+        public int maxOrders = 4, maxPlayers = 4, minPlayers = 1;
         public float walkSpeed = 7, runSpeed = 10.5f, interactDistance = 2.5f;
         public float frySeconds = 8, burnSeconds = 8, plateInterval = 4;
         public int cutCount = 4, wrongPenalty = 10, timeoutPenalty = 10;
@@ -85,8 +90,11 @@ namespace KitchenChaos.Multiplayer {
                 if (r == null || string.IsNullOrEmpty(r.name) || r.ingredients == null || r.ingredients.Length < 1 || r.ingredients.Length > 8)
                     throw new ArgumentException("食谱名称或数量无效");
                 if (r.reward <= 0 || r.reward > 10000) throw new ArgumentException("菜品报酬无效: " + r.name);
+                int breadCount=0;
                 foreach (var ingredient in r.ingredients)
                     if (!KitchenServer.IsPlatable(ingredient)) throw new ArgumentException("食谱包含无法装盘的食材: " + ingredient);
+                    else if(ingredient=="Bread") breadCount++;
+                if(breadCount>1) throw new ArgumentException("面包素材已包含两片，每道菜只能放一份面包: "+r.name);
             }
         }
     }

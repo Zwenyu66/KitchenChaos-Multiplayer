@@ -5,5 +5,6 @@ namespace KitchenChaos.Multiplayer {
         public KitchenObjectSO[] items;
         public AudioClipRefsSO sounds;
         public Material playerRingMaterial;
+        public Material[] chefBodyMaterials;
     }
 }

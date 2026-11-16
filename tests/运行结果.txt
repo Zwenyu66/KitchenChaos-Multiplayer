@@ -4,11 +4,13 @@ PASS Server rejects distant inactive unknown and stale requests
 PASS Only one player can pick up a contested item
 PASS Duplicate results replay and changed payload is rejected
 PASS Evicted sequence numbers cannot execute again
-PASS Cutting cooldown and item progress
+PASS Rapid cuts need no wait or newer snapshot and duplicate packets count once
+PASS A delayed cut cannot affect a replacement ingredient
 PASS Cooking and burning are driven by server time
 PASS Plate accepts repeated ingredients in exact quantities
 PASS Complete take cut cook plate deliver loop
-PASS Wrong assembly order fails and plate is consumed once
+PASS Reversed assembly order succeeds and duplicate delivery pays once
+PASS Recipe-specific payments persist through deductions and final settlement
 PASS Raw and burned food cannot be plated
 PASS Occupied hands stations and plate stock remain valid
 PASS Disconnect moves held item to a free worktop
@@ -17,6 +19,13 @@ PASS Global end produces frozen shared score and summary
 PASS Rematch increments epoch and rejects delayed old commands
 PASS Movement normalizes input expires and rejects nonfinite values
 PASS Five thousand adversarial actions preserve ownership
-PASS TCP supports two clients and fragmented UTF8 frames
-PASS TCP rejects oversized frames and observes host shutdown
-TOTAL 21 scenarios passed
+PASS Single host can ready and start a full round
+PASS Unordered recipes preserve duplicate ingredient quantities
+PASS Bread asset is used once per recipe
+PASS Tick input redundancy is idempotent and cannot speed up simulation
+PASS Prediction reconciles acknowledged input and replays remaining movement
+PASS World delta transfers mutations removals and stock without rewinding motion
+PASS Version fingerprints normalize Windows line endings and paths
+PASS Prediction survives delayed reordered and twenty percent dropped input packets
+PASS Actual bundled KCP UDP transport supports two clients and both channels
+TOTAL 30 scenarios passed

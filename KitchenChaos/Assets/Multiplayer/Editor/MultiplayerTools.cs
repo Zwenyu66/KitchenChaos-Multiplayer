@@ -2,6 +2,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Text;
 using UnityEditor;
@@ -15,10 +16,9 @@ namespace KitchenChaos.Multiplayer {
         public int callbackOrder { get { return 0; } }
         [InitializeOnLoadMethod]
         public static void RefreshBuildInfo() {
-            var files=Directory.GetFiles("Assets","*.cs",SearchOption.AllDirectories).OrderBy(p=>p,StringComparer.Ordinal).ToArray();
-            string contents=string.Join("\n",files.Select(p=>p.Replace('\\','/')+"\n"+File.ReadAllText(p)));
-            string digest;
-            using(var sha=SHA256.Create()) digest=BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(contents))).Replace("-","");
+            var roots=new[]{"Assets/Multiplayer/Core","Assets/Multiplayer/Runtime","Assets/Mirror/Core","Assets/Mirror/Transports/KCP"};
+            var files=roots.SelectMany(root=>Directory.GetFiles(root,"*.cs",SearchOption.AllDirectories));
+            string digest=BuildFingerprint.Compute(files.Select(p=>new KeyValuePair<string,string>(p,File.ReadAllText(p))));
             string json="{\"sourceHash\":\""+digest+"\"}\n";
             const string path="Assets/Resources/MultiplayerBuildInfo.json";
             Directory.CreateDirectory("Assets/Resources");
@@ -36,7 +36,8 @@ namespace KitchenChaos.Multiplayer {
             if(config==null) throw new BuildFailedException("缺少联机配置");
             JsonUtility.FromJson<Rules>(config.text).Validate();
             var catalog=Resources.Load<MultiplayerAssets>("MultiplayerAssets");
-            if(catalog==null || catalog.items==null || catalog.items.Length!=11 || catalog.items.Any(i=>i==null || i.prefab==null) || catalog.sounds==null)
+            if(catalog==null || catalog.items==null || catalog.items.Length!=11 || catalog.items.Any(i=>i==null || i.prefab==null) || catalog.sounds==null ||
+                catalog.chefBodyMaterials==null||catalog.chefBodyMaterials.Length!=4||catalog.chefBodyMaterials.Any(m=>m==null))
                 throw new BuildFailedException("食材或音效目录缺失，请使用完整工程");
             foreach(var path in new[]{"Assets/Scenes/MainMenuScene.unity","Assets/Scenes/GameScene.unity","Assets/Scenes/LoadingScene.unity"})
                 if(!EditorBuildSettings.scenes.Any(s=>s.enabled&&s.path==path)) throw new BuildFailedException("构建场景缺失: "+path);

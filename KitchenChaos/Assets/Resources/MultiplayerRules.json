@@ -4,7 +4,7 @@
   "countdownSeconds": 3,
   "maxOrders": 4,
   "maxPlayers": 4,
-  "minPlayers": 2,
+  "minPlayers": 1,
   "walkSpeed": 7,
   "runSpeed": 10.5,
   "interactDistance": 2.5,
@@ -99,10 +99,9 @@
       "ingredients": [
         "Bread",
         "CabbageSlices",
-        "TomatoSlices",
-        "Bread"
+        "TomatoSlices"
       ],
-      "reward": 110
+      "reward": 95
     },
     {
       "name": "双肉饼汉堡",

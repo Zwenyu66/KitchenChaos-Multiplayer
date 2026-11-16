@@ -21,6 +21,9 @@ namespace KitchenChaos.Multiplayer {
         public float Countdown { get; private set; }
         // Return corrected legal position after static-geometry collision resolution.
         public Func<PlayerState, float, float, float[]> ResolveMove;
+        public bool UseTickInputs;
+        public long TickNumber { get; private set; }
+        private readonly Dictionary<int,SortedDictionary<long,InputFrame>> inputQueues=new Dictionary<int,SortedDictionary<long,InputFrame>>();
         private readonly Random rng;
         private readonly Dictionary<int, Ledger> ledgers = new Dictionary<int, Ledger>();
         private readonly HashSet<int> participants = new HashSet<int>();
@@ -62,11 +65,22 @@ namespace KitchenChaos.Multiplayer {
                 if (free != null) { free.item = item.id; free.version++; item.owner = "c:" + free.id; }
                 else Items.Remove(item); // Documented fallback when every safe worktop is occupied.
             }
-            Players.Remove(p); ledgers.Remove(id);
+            Players.Remove(p); ledgers.Remove(id);inputQueues.Remove(id);
             if (Phase == Phase.Lobby) ResetReady();
             Emit("leave", id, 0);
         }
         private void ResetReady() { foreach (var p in Players) p.ready = false; }
+        public void QueueInputs(int id,InputFrame[] frames) {
+            var p=Players.Find(v=>v.id==id);
+            if(p==null||Phase!=Phase.Playing||frames==null||frames.Length>8) return;
+            SortedDictionary<long,InputFrame> queue;
+            if(!inputQueues.TryGetValue(id,out queue)) {queue=new SortedDictionary<long,InputFrame>();inputQueues[id]=queue;}
+            foreach(var f in frames) {
+                if(f.epoch!=Epoch||f.sequence<=p.lastInput||f.sequence>p.lastInput+180||
+                    float.IsNaN(f.x)||float.IsInfinity(f.x)||float.IsNaN(f.z)||float.IsInfinity(f.z))continue;
+                if(queue.Count<180&&!queue.ContainsKey(f.sequence))queue.Add(f.sequence,f);
+            }
+        }
         public void SetInput(int id, float x, float z, bool run) {
             var p = Players.Find(v => v.id == id);
             if (p == null || float.IsNaN(x) || float.IsNaN(z) || float.IsInfinity(x) || float.IsInfinity(z)) return;
@@ -102,7 +116,7 @@ namespace KitchenChaos.Multiplayer {
             }
             if (r.action == "start") {
                 if (id != Host || Phase != Phase.Lobby || Players.Count < Rules.minPlayers || Players.Any(v => !v.ready))
-                    return Ack(r, false, "至少两名玩家且全员准备后，由房主开始");
+                    return Ack(r, false, "1至4名玩家全员准备后，由房主开始");
                 Begin(); return Ack(r, true, "正在开局");
             }
             if (r.action == "return") {
@@ -122,8 +136,9 @@ namespace KitchenChaos.Multiplayer {
         }
         private static bool Reject(out string reason, string text) { reason = text; return false; }
         private void ClearWorld() {
+            inputQueues.Clear();TickNumber=0;
             Items.Clear(); Orders.Clear(); Menu = new Recipe[0];
-            foreach (var p in Players) { p.hand = 0; p.inputX = p.inputZ = 0; p.walking = p.running = false; }
+            foreach (var p in Players) { p.hand = 0; p.inputX = p.inputZ = 0; p.walking = p.running = false;p.lastInput=0; }
             foreach (var s in Stations) { s.item = s.cuts = 0; s.elapsed = s.progress = s.plateTimer = 0; s.plateStock = 4; s.version++; }
         }
         private void Begin() {
@@ -147,8 +162,19 @@ namespace KitchenChaos.Multiplayer {
                 return;
             }
             if (Phase != Phase.Playing) return;
+            TickNumber++;
             float active = Math.Min(dt, Remaining);
             foreach (var p in Players) {
+                if(UseTickInputs) {
+                    SortedDictionary<long,InputFrame> queue;
+                    p.walking=p.running=false;
+                    if(inputQueues.TryGetValue(p.id,out queue)&&queue.Count>0) {
+                        var entry=queue.First();queue.Remove(entry.Key);var f=entry.Value;
+                        Movement.Advance(p,f.x,f.z,f.run,Movement.TickSeconds,Rules,ResolveMove,Players);
+                        p.lastInput=f.sequence;
+                    }
+                    continue;
+                }
                 p.inputAge += dt;
                 float x = p.inputAge > .3f ? 0 : p.inputX, z = p.inputAge > .3f ? 0 : p.inputZ;
                 p.walking = x*x+z*z > .001f; p.running = p.walking && p.inputRun;
@@ -213,7 +239,7 @@ namespace KitchenChaos.Multiplayer {
             }
             if (s.kind == StationKind.Delivery) {
                 if (hand == null || hand.kind != "Plate") return Reject(out reason,"请端着餐盘出餐");
-                var order = Orders.Find(o => Menu[o.recipe].ingredients.SequenceEqual(hand.ingredients));
+                var order = Orders.Find(o => RecipeMatches(Menu[o.recipe].ingredients,hand.ingredients));
                 if (order == null) { Result.wrong++; Emit("wrong",p.id,s.id); reason="菜品与订单不符，扣款并回收餐盘"; }
                 else {
                     Orders.Remove(order); Result.completed++;
@@ -265,11 +291,15 @@ namespace KitchenChaos.Multiplayer {
         public static bool IsPlatable(string kind) {
             return kind == "Bread" || kind == "TomatoSlices" || kind == "CabbageSlices" || kind == "CheeseSlices" || kind == "MeatPattyCooked";
         }
+        public static bool RecipeMatches(string[] required,string[] supplied) {
+            if(required==null||supplied==null||required.Length!=supplied.Length)return false;
+            return required.OrderBy(v=>v,StringComparer.Ordinal).SequenceEqual(supplied.OrderBy(v=>v,StringComparer.Ordinal));
+        }
         private static float Dist2(float x,float z,float a,float b) { return (x-a)*(x-a)+(z-b)*(z-b); }
         private void Emit(string type,int actor,int station,int reward=0) { eventId++; lastEvent=type; lastActor=actor; lastStation=station; lastReward=reward; }
         // Caller serializes immediately on the same thread; clients only ever receive detached JSON snapshots.
         public Snapshot GetSnapshot() {
-            return new Snapshot { revision=++revision, epoch=Epoch, host=Host, code=Code, phase=Phase,
+            return new Snapshot { revision=++revision,tick=TickNumber, epoch=Epoch, host=Host, code=Code, phase=Phase,
                 remaining=Remaining,countdown=Countdown,players=Players.ToArray(),stations=Stations.ToArray(),items=Items.ToArray(),
                 menu=Menu,orders=Orders.ToArray(),summary=Result,eventId=eventId,lastEvent=lastEvent,lastActor=lastActor,lastStation=lastStation,lastReward=lastReward };
         }

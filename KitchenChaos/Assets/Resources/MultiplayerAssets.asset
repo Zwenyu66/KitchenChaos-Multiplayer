@@ -26,3 +26,8 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 22ac905f0966982458f5583d5ea7c860, type: 2}
   sounds: {fileID: 11400000, guid: 817f22adab4100248a5efbe49b85f80f, type: 2}
   playerRingMaterial: {fileID: 2100000, guid: dba792b574c201a4eabfe983aa82805a, type: 2}
+  chefBodyMaterials:
+  - {fileID: 2100000, guid: dba792b574c201a4eabfe983aa82805a, type: 2}
+  - {fileID: 2100000, guid: 5ab04d90f9e9cd646a3bd2193331a761, type: 2}
+  - {fileID: 2100000, guid: 353eec077b4390b43aab98adeac15a1e, type: 2}
+  - {fileID: 2100000, guid: ead4e305e7c244b418af43ccfd3c5aac, type: 2}

@@ -107,7 +107,7 @@ namespace KitchenChaos.Multiplayer {
             Session.RoomCode=GUI.TextField(new Rect(505,475,150,46),Session.RoomCode,6,field).ToUpperInvariant();
             if(Button(new Rect(690,475,365,46),Session.Connecting?"正在连接…":"加入房间",!Session.Connecting)) Session.JoinRoom();
             Label(new Rect(350,552,720,65),Session.Notice,small);
-            Label(new Rect(350,625,720,65),"两人至四人合作。局域网填写房主IPv4；同机双开填写127.0.0.1。\n创建后需把地址、端口、房间码一起告诉队友。",small);
+            Label(new Rect(350,625,720,65),"支持单人及2–4人合作。局域网填写房主IPv4；同机双开填写127.0.0.1。\n创建后需把地址、端口、房间码一起告诉队友。",small);
             if(Button(new Rect(350,725,220,45),"返回主菜单")) Session.BackToMenu();
             if(Session.Connecting && Button(new Rect(835,725,220,45),"取消连接")) Session.Leave();
         }
@@ -116,7 +116,7 @@ namespace KitchenChaos.Multiplayer {
             Label(new Rect(310,115,800,55),"厨房房间  "+state.code,title);
             string addresses=Session.IsHost?LocalAddresses():Session.Address;
             Label(new Rect(310,190,800,56),"房主地址 "+addresses+"    端口 "+Session.PortText,small);
-            Label(new Rect(310,245,800,35),"成员 "+state.players.Length+" / "+Session.Config.maxPlayers+"    全员准备后由房主开始",heading);
+            Label(new Rect(310,245,800,35),"成员 "+state.players.Length+" / "+Session.Config.maxPlayers+"    1人也可开局 · 全员准备后由房主开始",heading);
             int row=0;
             foreach(var player in state.players) {
                 float y=305+row++*70;Box(new Rect(310,y,800,58),blue);
@@ -198,7 +198,7 @@ namespace KitchenChaos.Multiplayer {
         private void DrawRecipeMenu(Snapshot state) {
             Box(new Rect(330,150,780,540),panelBlue);
             Box(new Rect(330,150,780,5),edge);
-            Label(new Rect(356,170,730,42),"本局菜单   按图标顺序装盘",heading);
+            Label(new Rect(356,170,730,42),"本局菜单   按份数装盘，顺序不限",heading);
             for(int i=0;i<state.menu.Length;i++) {
                 var recipe=state.menu[i];float y=228+i*108;
                 Label(new Rect(356,y,730,32),recipe.name+"    "+recipe.reward+" 元");
@@ -207,15 +207,16 @@ namespace KitchenChaos.Multiplayer {
         }
         private void Ingredients(Rect rect,string[] ingredients,float iconSize,bool numbers,bool cookGuide) {
             if(ingredients.Length==0) { Label(rect,"空餐盘",small);return; }
-            float slot=Mathf.Min(56,rect.width/ingredients.Length);
-            for(int i=0;i<ingredients.Length;i++) {
+            var groups=ingredients.GroupBy(v=>v).ToArray();
+            float slot=Mathf.Min(56,rect.width/groups.Length);
+            for(int i=0;i<groups.Length;i++) {
                 float x=rect.x+i*slot;
                 float size=Mathf.Min(iconSize,slot-5);
                 float height=size+(numbers?12:0);
                 Box(new Rect(x,rect.y,slot-3,height),tile);
-                bool cook=cookGuide && ingredients[i]=="MeatPattyCooked";
-                DrawIngredientIcon(new Rect(x+(slot-3-size)/2,rect.y,size,size),cook?Beef:ingredients[i]);
-                if(numbers) Label(new Rect(x,rect.y+size,slot-3,12),cook?(i+1)+"·煎":(i+1).ToString(),tileNumber);
+                bool cook=cookGuide && groups[i].Key=="MeatPattyCooked";
+                DrawIngredientIcon(new Rect(x+(slot-3-size)/2,rect.y,size,size),cook?Beef:groups[i].Key);
+                if(numbers) Label(new Rect(x,rect.y+size,slot-3,12),cook?"煎×"+groups[i].Count():"×"+groups[i].Count(),tileNumber);
             }
         }
         private void DrawIngredientIcon(Rect rect,string ingredient) {
@@ -277,7 +278,7 @@ namespace KitchenChaos.Multiplayer {
         private void Pause() {
             Curtain();Box(new Rect(455,245,530,400),panelBlue);
             Label(new Rect(500,280,440,55),"联机菜单",title);
-            Label(new Rect(500,355,440,65),"打开菜单时本机停止输入，房间时间继续流逝。",text);
+            Label(new Rect(500,355,440,90),"打开菜单时本机停止输入，房间时间继续流逝。\n"+Session.NetworkInfo,text);
             if(Button(new Rect(500,450,440,55),"继续协作")) Session.World.PauseOverlay=false;
             if(Button(new Rect(500,535,440,55),Session.IsHost?"关闭房间并退出":"退出房间")) Session.Leave();
         }

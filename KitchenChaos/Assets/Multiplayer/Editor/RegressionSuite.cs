@@ -1,7 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net.Sockets;
+using System.Net;
+using kcp2k;
 using System.Text;
 using System.Threading;
 
@@ -136,10 +137,10 @@ namespace KitchenChaos.Multiplayer {
                 Check(f.game.Result.bestSeconds>=8,"best delivery time");Check(f.game.Orders.Count==3,"order consumed");
                 f.game.Step(4);Check(f.game.Orders.Count==4,"four second refill");
             });
-            Test("Wrong assembly order fails and plate is consumed once",()=>{
+            Test("Reversed assembly order succeeds and duplicate delivery pays once",()=>{
                 var f=new Fixture();f.Plate(1,new[]{"MeatPattyCooked","Bread"});f.At(1,14);
                 var r=f.Cmd(1,"interact",14);Check(f.game.Command(1,r).ok,"wrong delivery is processed");
-                f.game.Command(1,r);Check(f.game.Result.wrong==1&&f.Player(1).hand==0,"idempotent wrong delivery");
+                f.game.Command(1,r);Check(f.game.Result.completed==1&&f.game.Result.wrong==0&&f.game.Result.earned==100&&f.Player(1).hand==0,"reordered ingredients and replay");
             });
             Test("Recipe-specific payments persist through deductions and final settlement",()=>{
                 var f=new Fixture();
@@ -205,44 +206,108 @@ namespace KitchenChaos.Multiplayer {
                     f.game.Step(.01f);f.game.CheckInvariants();
                 }
             });
-            Test("TCP supports two clients and fragmented UTF8 frames",TransportRoundtrip);
-            Test("TCP rejects oversized frames and observes host shutdown",TransportLimits);
+            Test("Single host can ready and start a full round",()=>{
+                var f=new Fixture(false);f.game.RemovePlayer(2);f.Do(1,"ready",ready:true);
+                Check(f.Do(1,"start").ok,"one-player start");f.game.Step(3.1f);
+                Check(f.game.Phase==Phase.Playing&&f.game.Orders.Count==4,"solo orders");
+                f.game.Step(301);Check(f.game.Result.participants==1,"solo settlement");
+            });
+            Test("Unordered recipes preserve duplicate ingredient quantities",()=>{
+                Check(KitchenServer.RecipeMatches(new[]{"Bread","CheeseSlices","CheeseSlices"},new[]{"CheeseSlices","Bread","CheeseSlices"}),"unordered duplicate");
+                Check(!KitchenServer.RecipeMatches(new[]{"Bread","CheeseSlices","CheeseSlices"},new[]{"CheeseSlices","Bread"}),"missing portion");
+                Check(!KitchenServer.RecipeMatches(new[]{"Bread","CheeseSlices"},new[]{"Bread","TomatoSlices"}),"wrong ingredient");
+            });
+            Test("Bread asset is used once per recipe",()=>{
+                var f=new Fixture();f.game.Rules.recipes[0].ingredients=new[]{"Bread","Bread"};
+                bool rejected=false;try{f.game.Rules.Validate();}catch(ArgumentException){rejected=true;}
+                Check(rejected,"double bread rejected");
+            });
+            Test("Tick input redundancy is idempotent and cannot speed up simulation",()=>{
+                var f=new Fixture();f.game.UseTickInputs=true;f.Player(2).x=100;
+                var inputs=Enumerable.Range(1,8).Select(i=>new InputFrame{epoch=f.game.Epoch,sequence=i,x=1}).ToArray();
+                f.game.QueueInputs(1,inputs);f.game.QueueInputs(1,inputs);f.game.Step(Movement.TickSeconds);
+                Check(Math.Abs(f.Player(1).x-7f/30)<.0001f&&f.Player(1).lastInput==1,"one input per server tick");
+                for(int i=0;i<7;i++)f.game.Step(Movement.TickSeconds);
+                Check(f.Player(1).lastInput==8&&Math.Abs(f.Player(1).x-8*7f/30)<.0001f,"redundant frames not repeated");
+                f.game.QueueInputs(1,new[]{new InputFrame{epoch=f.game.Epoch-1,sequence=9,x=1},new InputFrame{epoch=f.game.Epoch,sequence=long.MaxValue,x=1}});
+                f.game.Step(Movement.TickSeconds);Check(f.Player(1).lastInput==8,"old epochs and impossible future frames ignored");
+            });
+            Test("Prediction reconciles acknowledged input and replays remaining movement",()=>{
+                var rules=new Rules();var prediction=new MovementPrediction();var p=new PlayerState{id=1};prediction.Reset(p,4);
+                for(int i=0;i<4;i++)prediction.Advance(1,0,false,rules,null,new PlayerState[0]);
+                Check(prediction.Position.x>.9f&&p.x==0,"local movement before host reply");
+                p.x=2*7f/30;p.lastInput=2;prediction.Reconcile(p,rules,null,new PlayerState[0]);
+                Check(prediction.PendingCount==2&&Math.Abs(prediction.Position.x-4*7f/30)<.0001f,"remaining frames replayed");
+                p.x=0;p.lastInput=1;prediction.Reconcile(p,rules,null,null);
+                Check(prediction.Position.x>.9f,"stale acknowledgement ignored");
+                p.lastInput=4;p.x=.2f;prediction.Reconcile(p,rules,null,null);
+                Check(prediction.PendingCount==0&&Math.Abs(prediction.Position.x-.2f)<.0001f,"host collision correction wins");
+            });
+            Test("World delta transfers mutations removals and stock without rewinding motion",()=>{
+                var f=new Fixture();var builder=new WorldDeltaBuilder();var initial=f.game.GetSnapshot();builder.Create(initial);
+                var client=new Snapshot{tick=100,players=initial.players.Select(p=>new PlayerState{id=p.id,x=99}).ToArray(),
+                    stations=initial.stations.Select(v=>new StationState{id=v.id,plateStock=v.plateStock}).ToArray(),items=new ItemState[0]};
+                f.Interact(1,13);var delta=builder.Create(f.game.GetSnapshot());delta.Apply(client);
+                Check(client.items.Length==1&&client.stations.First(v=>v.id==13).plateStock==3,"stock and held plate transferred");
+                Check(client.tick==100&&client.players[0].x==99,"motion not overwritten by control delta");
+                f.Interact(1,15);builder.Create(f.game.GetSnapshot()).Apply(client);Check(client.items.Length==0,"removed item transferred");
+                Check(builder.Create(f.game.GetSnapshot()).stations.Length==0,"unchanged stations omitted");
+            });
+            Test("Version fingerprints normalize Windows line endings and paths",()=>{
+                var a=new[]{new KeyValuePair<string,string>("Assets/Code.cs","a\nb\n")};
+                var b=new[]{new KeyValuePair<string,string>("Assets\\Code.cs","a\r\nb\r\n")};
+                Check(BuildFingerprint.Compute(a)==BuildFingerprint.Compute(b),"LF and CRLF compatible");
+                b[0]=new KeyValuePair<string,string>("Assets/Code.cs","changed");Check(BuildFingerprint.Compute(a)!=BuildFingerprint.Compute(b),"real source change rejected");
+            });
+            Test("Prediction survives delayed reordered and twenty percent dropped input packets",()=>{
+                var f=new Fixture();f.game.UseTickInputs=true;f.Player(2).x=1000;
+                var prediction=new MovementPrediction();prediction.Reset(f.Player(1),f.game.Epoch);
+                var upstream=new List<Tuple<int,InputFrame[]>>();
+                var downstream=new List<Tuple<int,PlayerState>>();
+                for(int tick=0;tick<240;tick++) {
+                    if(tick<180) {
+                        prediction.Advance(tick<120?1:tick<150?-1:0,0,false,f.game.Rules,null,f.game.Players);
+                        if(tick==0)Check(prediction.Position.x>0&&f.Player(1).x==0,"instant response before network reply");
+                    }
+                    // Simulate 100ms one-way input delay, jitter/reordering and 20% whole input-message loss.
+                    if(tick<200&&tick%5!=1)upstream.Add(Tuple.Create(tick+3+(tick%7==0?2:0),prediction.Recent()));
+                    foreach(var message in upstream.Where(v=>v.Item1<=tick).ToArray()) {
+                        f.game.QueueInputs(1,message.Item2);upstream.Remove(message);
+                    }
+                    f.game.Step(Movement.TickSeconds);
+                    var host=f.Player(1);var copy=new PlayerState{id=1};MotionState.From(host).Apply(copy);
+                    downstream.Add(Tuple.Create(tick+3,copy));
+                    foreach(var message in downstream.Where(v=>v.Item1<=tick).ToArray()) {
+                        prediction.Reconcile(message.Item2,f.game.Rules,null,f.game.Players);downstream.Remove(message);
+                    }
+                }
+                Check(f.Player(1).lastInput==180&&prediction.PendingCount==0,"all inputs recovered without duplicate motion");
+                Check(Math.Abs(f.Player(1).x-90*7f/30)<.001f,"authoritative distance matches held keys");
+                Check(Math.Abs(prediction.Position.x-f.Player(1).x)<.0001f,"prediction converges after acknowledgements");
+            });
+            Test("Actual bundled KCP UDP transport supports two clients and both channels",KcpRoundtrip);
             output("TOTAL "+count+" scenarios passed");return count;
         }
-        private static TransportEvent Wait(TcpTransport t,Func<TransportEvent,bool> match) {
-            var stop=DateTime.UtcNow.AddSeconds(5);
-            while(DateTime.UtcNow<stop) { TransportEvent e;while(t.Poll(out e)) if(match(e)) return e;Thread.Sleep(5); }
-            throw new Exception("transport timed out");
-        }
-        private static void TransportRoundtrip() {
-            using(var host=new TcpTransport()) using(var a=new TcpTransport()) using(var b=new TcpTransport()) {
-                host.Host(0);a.Connect("127.0.0.1",host.Port);b.Connect("127.0.0.1",host.Port);
-                Wait(a,e=>e.type=="opened");Wait(b,e=>e.type=="opened");
-                a.Send(0,"番茄🍅");b.Send(0,"B");
-                var first=Wait(host,e=>e.type=="message");var second=Wait(host,e=>e.type=="message");
-                Check(first.peer!=second.peer,"connection identities");
-                host.Send(first.peer,first.text);host.Send(second.peer,second.text);
-                Check(Wait(a,e=>e.type=="message").text=="番茄🍅","UTF8");Check(Wait(b,e=>e.type=="message").text=="B","second client");
-                using(var raw=new TcpClient(AddressFamily.InterNetwork)) {
-                    raw.Connect(System.Net.IPAddress.Loopback,host.Port);
-                    var stream=raw.GetStream();var bytes=Encoding.UTF8.GetBytes("split frame");
-                    var all=new byte[4+bytes.Length];all[3]=(byte)bytes.Length;Array.Copy(bytes,0,all,4,bytes.Length);
-                    for(int i=0;i<all.Length;i++) stream.Write(all,i,1);
-                    Check(Wait(host,e=>e.type=="message").text=="split frame","partial reads");
-                }
-            }
-        }
-        private static void TransportLimits() {
-            using(var host=new TcpTransport()) using(var client=new TcpTransport()) {
-                host.Host(0);
-                using(var raw=new TcpClient(AddressFamily.InterNetwork)) {
-                    raw.Connect(System.Net.IPAddress.Loopback,host.Port);
-                    var opened=Wait(host,e=>e.type=="opened");raw.GetStream().Write(new byte[]{127,255,255,255},0,4);
-                    Wait(host,e=>e.type=="closed"&&e.peer==opened.peer);
-                }
-                client.Connect("127.0.0.1",host.Port);Wait(client,e=>e.type=="opened");host.Dispose();
-                Wait(client,e=>e.type=="closed");
-            }
+        private static void KcpRoundtrip() {
+            var oldInfo=Log.Info;var oldWarning=Log.Warning;Log.Info=_=>{};Log.Warning=_=>{};
+            var received=new List<string>();var peers=new HashSet<int>();
+            KcpServer host=null;KcpClient a=null,b=null;
+            try {
+                var config=new KcpConfig(DualMode:false,Interval:10,SendWindowSize:256,ReceiveWindowSize:256);
+                host=new KcpServer((id,ep)=>peers.Add(id),(id,bytes,channel)=>host.Send(id,bytes,channel),id=>{},(id,error,reason)=>{},config);
+                a=new KcpClient(()=>{},(data,channel)=>received.Add("a:"+channel+":"+Encoding.UTF8.GetString(data.Array,data.Offset,data.Count)),()=>{},(error,reason)=>{},config);
+                b=new KcpClient(()=>{},(data,channel)=>received.Add("b:"+channel+":"+Encoding.UTF8.GetString(data.Array,data.Offset,data.Count)),()=>{},(error,reason)=>{},config);
+                host.Start(0);ushort port=(ushort)((IPEndPoint)host.LocalEndPoint).Port;a.Connect("127.0.0.1",port);b.Connect("127.0.0.1",port);
+                Action pump=()=>{host.Tick();a.Tick();b.Tick();Thread.Sleep(1);};
+                var limit=DateTime.UtcNow.AddSeconds(5);while((!a.connected||!b.connected)&&DateTime.UtcNow<limit)pump();
+                Check(a.connected&&b.connected&&peers.Count==2,"two actual UDP peers");
+                string unicode="番茄🍅"+new string('x',5000);
+                a.Send(new ArraySegment<byte>(Encoding.UTF8.GetBytes(unicode)),KcpChannel.Reliable);
+                b.Send(new ArraySegment<byte>(Encoding.UTF8.GetBytes("motion")),KcpChannel.Unreliable);
+                limit=DateTime.UtcNow.AddSeconds(5);while(received.Count<2&&DateTime.UtcNow<limit)pump();
+                Check(received.Contains("a:Reliable:"+unicode),"reliable fragmentation and UTF8 roundtrip");
+                Check(received.Contains("b:Unreliable:motion"),"unreliable motion channel");
+            } finally {if(a!=null)a.Disconnect();if(b!=null)b.Disconnect();if(host!=null)host.Stop();Log.Info=oldInfo;Log.Warning=oldWarning;}
         }
     }
 }
